@@ -1,0 +1,14 @@
+{
+    "name": "fishyboat21/simple-api",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Fishyboat21\\SimpleApi\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=8.4" 
+    },
+    "description": ""
+}
