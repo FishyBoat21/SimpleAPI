@@ -2,13 +2,21 @@
     "name": "fishyboat21/simple-api",
     "type": "library",
     "license": "MIT",
+    "description": "A minimal PHP 8.4+ library for building JSON HTTP APIs with per-file routing",
     "autoload": {
         "psr-4": {
-            "Fishyboat21\\SimpleApi\\": "src/"
+            "Fishyboat21\\SimpleApi\\": "src/",
+            "App\\Api\\": "src/Api/"
         }
     },
     "require": {
-        "php": ">=8.4" 
+        "php": ">=8.4"
     },
-    "description": ""
+    "bin": ["bin/simple-api"],
+    "scripts": {
+        "route:generate": "simple-api route:generate"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11"
+    }
 }

@@ -1,1 +1,4 @@
 /vendor/
+/storage/routes.php
+.phpunit.result.cache
+composer.lock

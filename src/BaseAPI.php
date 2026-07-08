@@ -9,8 +9,17 @@ use Fishyboat21\SimpleApi\Models\Exceptions\MethodNotSupportedException;
 use Fishyboat21\SimpleApi\Models\ResponseError;
 use Throwable;
 
+/**
+ * @deprecated Use {@see SimpleApi} instead. This class is kept for
+ *             backward compatibility and will be removed in v3.0.
+ *
+ * Migration guide:
+ *   - BaseAPI → SimpleApi
+ *   - addHandler() → #[Route] attribute + ApiHandler interface
+ *   - ResponseError/ResponseSuccess → Response factory methods
+ */
 class BaseAPI{
-    protected array $handlers;
+    protected array $handlers = [];
 
     public function __construct()
     {
@@ -23,8 +32,8 @@ class BaseAPI{
     }
     
     public function addHandler(Method $method, Closure $handler):self{
-        if(isset($this->handlers[$method])){
-            throw new Exception("Method $method already set!");
+        if(isset($this->handlers[$method->value])){
+            throw new Exception("Method {$method->value} already set!");
         }
         $this->handlers[$method->value] = $handler;
         return $this;
@@ -32,7 +41,7 @@ class BaseAPI{
     
     public function run():void{
         try{
-            if(!isset($handler[$_SERVER['REQUEST_METHOD']])){
+            if(!isset($this->handlers[$_SERVER['REQUEST_METHOD']])){
                 throw new MethodNotSupportedException("Method not supported!");
             }
             $result = $this->handlers[$_SERVER['REQUEST_METHOD']]();

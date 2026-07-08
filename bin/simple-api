@@ -1,0 +1,57 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * SimpleApi CLI — route cache generation tool.
+ *
+ * Usage:
+ *   vendor/bin/simple-api route:generate [--scan=src/Api] [--namespace=App\\Api] [--output=storage/routes.php] [--base-url=api]
+ */
+
+// Find the project root (where vendor/ lives)
+$projectRoot = getcwd();
+// Walk up to find vendor/autoload.php
+while ($projectRoot !== '/' && $projectRoot !== '' && !file_exists($projectRoot . '/vendor/autoload.php')) {
+    $projectRoot = dirname($projectRoot);
+}
+
+$autoloadPath = $projectRoot . '/vendor/autoload.php';
+if (!file_exists($autoloadPath)) {
+    fprintf(STDERR, "Error: vendor/autoload.php not found. Run 'composer install' first.\n");
+    exit(1);
+}
+
+require $autoloadPath;
+
+use Fishyboat21\SimpleApi\Command\RouteGenerateCommand;
+
+// Parse CLI args: --key=value or --key value
+$args = array_slice($argv, 1);
+$command = $args[0] ?? 'route:generate';
+
+if (!in_array($command, ['route:generate', 'generate'], true)) {
+    fprintf(STDERR, "Usage: simple-api route:generate [--scan=src/Api] [--namespace=App\\Api] [--output=storage/routes.php] [--base-url=api]\n");
+    exit(1);
+}
+
+// Parse options from remaining args
+$options = [];
+for ($i = 1, $len = count($args); $i < $len; $i++) {
+    $arg = $args[$i];
+    if (str_starts_with($arg, '--')) {
+        $parts = explode('=', substr($arg, 2), 2);
+        $key = $parts[0];
+        $value = $parts[1] ?? ($args[$i + 1] ?? null);
+        if ($value === null || str_starts_with($value, '--')) {
+            $value = null;
+        } else {
+            $i++; // consume the value
+        }
+        if ($value !== null) {
+            $options[$key] = $value;
+        }
+    }
+}
+
+$cmd = new RouteGenerateCommand();
+exit($cmd->execute($options));
