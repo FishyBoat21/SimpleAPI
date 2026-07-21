@@ -1,0 +1,17 @@
+# Enable clean URLs without .php extension
+# Requires mod_negotiation: a2enmod negotiation
+<IfModule mod_negotiation.c>
+    Options +MultiViews
+</IfModule>
+
+# Fallback: explicit rewrite (requires mod_rewrite)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # If the requested file or directory exists, serve it directly
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Rewrite /api/endpoint to /api/endpoint.php
+    RewriteRule ^api/(.+)$ api/$1.php [QSA,L]
+</IfModule>

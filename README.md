@@ -1,6 +1,6 @@
 # SimpleAPI
 
-A minimal, zero-dependency PHP 8.4+ library for building JSON HTTP APIs using a **per-file endpoint pattern**. The filesystem *is* your routing table — no manual route registration, no YAML, no annotations.
+A minimal, zero-dependency PHP 8.4+ library for building JSON HTTP APIs using a **file-per-endpoint pattern**. Each endpoint is a single PHP file in `public/api/` — no complex routing, no route cache, no code generation. Just create a file and it's live.
 
 ## Requirements
 
@@ -15,140 +15,60 @@ composer require fishyboat21/simple-api
 
 ## Quick Start
 
-### 1. Create the directory structure
+### 1. Create your first endpoint
 
-```
-your-project/
-├── public/
-│   └── index.php          # Front controller
-├── src/
-│   └── Api/               # Your endpoint classes live here
-├── storage/               # Generated route cache
-├── vendor/
-└── composer.json
-```
-
-Add the PSR-4 autoload mapping for your API namespace in `composer.json`:
-
-```json
-{
-    "autoload": {
-        "psr-4": {
-            "App\\Api\\": "src/Api/"
-        }
-    },
-    "scripts": {
-        "route:generate": "simple-api route:generate"
-    }
-}
-```
-
-Run `composer dump-autoload` after adding the mapping.
-
-### 2. Create your first endpoint
-
-**`src/Api/Health/Index.php`**
+**`public/api/health.php`**
 
 ```php
 <?php
 
-namespace App\Api\Health;
+require_once __DIR__ . '/../../vendor/autoload.php';
 
-use Fishyboat21\SimpleApi\Attribute\Route;
-use Fishyboat21\SimpleApi\Enum\Method;
+use Fishyboat21\SimpleApi\Endpoint;
 use Fishyboat21\SimpleApi\Http\Request;
 use Fishyboat21\SimpleApi\Http\Response;
-use Fishyboat21\SimpleApi\Interface\ApiHandler;
 
-#[Route(Method::GET)]
-class Index implements ApiHandler
-{
-    public function handle(Request $request): Response
-    {
-        return Response::ok(['status' => 'healthy']);
-    }
-}
-```
+$api = new Endpoint();
 
-### 3. Generate the route cache
-
-```bash
-composer route:generate
-# Output: Route cache generated: 1 route(s) written to storage/routes.php
-```
-
-### 4. Create the front controller
-
-**`public/index.php`**
-
-```php
-<?php
-
-require __DIR__ . '/../vendor/autoload.php';
-
-use Fishyboat21\SimpleApi\SimpleApi;
-
-$api = new SimpleApi(
-    routeCacheFile: __DIR__ . '/../storage/routes.php',
-);
+$api->get(function (Request $request): Response {
+    return Response::ok(['status' => 'healthy']);
+});
 
 $api->run();
 ```
 
-### 5. Start the server
+### 2. Start the server
 
 ```bash
 php -S localhost:8000 -t public/
-# → GET http://localhost:8000/api/health
+```
+
+### 3. Test it
+
+```bash
+curl http://localhost:8000/api/health.php
 # → {"status":200,"message":"OK","data":{"status":"healthy"}}
 ```
 
 ---
 
-## Routing Convention
+## Clean URLs
 
-The filesystem path *is* the URL path. Create a file — it becomes a route.
+Enable clean URLs without the `.php` extension by placing this `.htaccess` in your `public/` directory:
 
-| File | URL | Method |
-|---|---|---|
-| `src/Api/Health/Index.php` | `GET /api/health` | Declared via `#[Route]` |
-| `src/Api/Users/Index.php` | `GET,POST /api/users` | Multiple `#[Route]` on one class |
-| `src/Api/Users/_id/Index.php` | `GET /api/users/{id}` | Params via `_` prefix |
-
-### Rules
-
-1. **Files go in `src/Api/`** (configurable via `--scan`)
-2. **`Index.php`** is the collection root — stripped from the URL
-3. **`_underscore` prefix** creates a path parameter — `_id` becomes `{id}`
-4. **Directories** become URL path segments, **all lowercased**
-5. **`#[Route]` attribute** declares the HTTP method(s)
-6. **Regenerate the cache** after adding or changing any endpoint: `composer route:generate`
-
-### Path parameters
-
-Path parameter values are accessed on the `Request` object:
-
-```php
-// src/Api/Users/_id/Index.php → GET /api/users/42
-#[Route(Method::GET)]
-class Index implements ApiHandler
-{
-    public function handle(Request $request): Response
-    {
-        $userId = $request->getAttribute('id'); // '42'
-
-        return Response::ok([
-            'userId' => $userId,
-        ]);
-    }
-}
+```apache
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^api/(.+)$ api/$1.php [QSA,L]
+</IfModule>
 ```
 
-Multiple parameters are supported — just nest `_`-prefixed directories:
-
-```
-src/Api/Organizations/_orgId/Members/_memberId/Index.php
-→ GET /api/organizations/{orgId}/members/{memberId}
+With the rewrite rule:
+```bash
+curl http://localhost:8000/api/health
+# → {"status":200,"message":"OK","data":{"status":"healthy"}}
 ```
 
 ---
@@ -157,64 +77,55 @@ src/Api/Organizations/_orgId/Members/_memberId/Index.php
 
 ### Single-method endpoint
 
-A class-level `#[Route]` dispatches to a `handle()` method by convention:
+```php
+<?php
+// public/api/products.php
+require_once __DIR__ . '/../../vendor/autoload.php';
+
+use Fishyboat21\SimpleApi\Endpoint;
+use Fishyboat21\SimpleApi\Http\Request;
+use Fishyboat21\SimpleApi\Http\Response;
+
+$api = new Endpoint();
+
+$api->get(function (Request $request): Response {
+    return Response::ok([
+        'products' => [/* ... */],
+    ]);
+});
+
+$api->run();
+```
+
+### Multi-method endpoint
+
+Register multiple HTTP method handlers on the same file:
 
 ```php
 <?php
+// public/api/users.php
+require_once __DIR__ . '/../../vendor/autoload.php';
 
-namespace App\Api\Products;
-
-use Fishyboat21\SimpleApi\Attribute\Route;
-use Fishyboat21\SimpleApi\Enum\Method;
+use Fishyboat21\SimpleApi\Endpoint;
 use Fishyboat21\SimpleApi\Http\Request;
 use Fishyboat21\SimpleApi\Http\Response;
-use Fishyboat21\SimpleApi\Interface\ApiHandler;
 
-#[Route(Method::GET)]
-class Index implements ApiHandler
-{
-    public function handle(Request $request): Response
-    {
-        return Response::ok([
-            'products' => [/* ... */],
-        ]);
-    }
-}
+$api = new Endpoint();
+
+$api->get(function (Request $request): Response {
+    return Response::ok(['users' => [/* all users */]]);
+});
+
+$api->post(function (Request $request): Response {
+    $name = $request->body('name');
+    // ... create user ...
+    return Response::created(['id' => 1], 'User created');
+});
+
+$api->run();
 ```
 
-### Multi-method endpoint (separate methods per verb)
-
-Use method-level `#[Route]` attributes to dispatch directly to named methods:
-
-```php
-<?php
-
-namespace App\Api\Users;
-
-use Fishyboat21\SimpleApi\Attribute\Route;
-use Fishyboat21\SimpleApi\Enum\Method;
-use Fishyboat21\SimpleApi\Http\Request;
-use Fishyboat21\SimpleApi\Http\Response;
-use Fishyboat21\SimpleApi\Interface\ApiHandler;
-
-class Index implements ApiHandler
-{
-    #[Route(Method::GET)]
-    public function list(Request $request): Response
-    {
-        return Response::ok([/* all users */]);
-    }
-
-    #[Route(Method::POST)]
-    public function create(Request $request): Response
-    {
-        $name = $request->body('name');
-        // ... create user ...
-
-        return Response::created(['id' => 1], 'User created');
-    }
-}
-```
+Supported methods: `get()`, `post()`, `put()`, `delete()`, `patch()`.
 
 ---
 
@@ -223,9 +134,8 @@ class Index implements ApiHandler
 The `Request` object provides access to every part of the incoming request:
 
 ```php
-public function handle(Request $request): Response
-{
-    // Query string: /api/search?q=hello&page=2
+$api->get(function (Request $request): Response {
+    // Query string: /api/search.php?q=hello&page=2
     $query  = $request->query('q');          // 'hello'
     $page   = $request->query('page', '1');  // '2' (with default)
     $all    = $request->queryParams();       // ['q' => 'hello', 'page' => '2']
@@ -239,16 +149,13 @@ public function handle(Request $request): Response
     $auth   = $request->header('Authorization');
     $type   = $request->header('Content-Type');
 
-    // Path parameters (set by the router)
-    $id     = $request->getAttribute('id');  // from /api/users/{id}
-
     // Request metadata
     $method = $request->method();            // 'GET', 'POST', etc.
-    $uri    = $request->uri();               // '/api/users/42?include=posts'
-    $path   = $request->path();              // '/api/users/42' (no query string)
+    $uri    = $request->uri();               // '/api/search.php?q=hello'
+    $path   = $request->path();              // '/api/search.php'
 
     return Response::ok(/* ... */);
-}
+});
 ```
 
 ---
@@ -278,9 +185,6 @@ Response::error(422, 'Validation failed');
 Response::ok(['data' => $value])
     ->setHeader('X-Custom', 'value')
     ->setHeader('Cache-Control', 'no-cache');
-
-// Manual construction
-new Response(status: 200, message: 'OK', data: ['key' => 'value']);
 ```
 
 ### JSON response format
@@ -300,33 +204,34 @@ new Response(status: 200, message: 'OK', data: ['key' => 'value']);
 
 ## CORS Configuration
 
-CORS is configurable per-origin, with safe defaults (allow all origins, common methods).
+CORS is configurable per-endpoint or globally with safe defaults (allow all origins, common methods).
 
 ```php
 <?php
-// public/index.php
-require __DIR__ . '/../vendor/autoload.php';
+// public/api/health.php
+require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Fishyboat21\SimpleApi\Config\CorsConfig;
-use Fishyboat21\SimpleApi\SimpleApi;
+use Fishyboat21\SimpleApi\Endpoint;
+use Fishyboat21\SimpleApi\Http\Request;
+use Fishyboat21\SimpleApi\Http\Response;
 
 $cors = new CorsConfig(
     allowedOrigins: ['https://myapp.com', 'https://admin.myapp.com'],
     allowedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     allowCredentials: true,
-    maxAge: 3600,  // preflight cache in seconds
+    maxAge: 3600,
 );
 
-$api = new SimpleApi(
-    routeCacheFile: __DIR__ . '/../storage/routes.php',
-    corsConfig: $cors,
-);
+$api = new Endpoint(corsConfig: $cors);
+
+$api->get(function (Request $request): Response {
+    return Response::ok(['status' => 'healthy']);
+});
 
 $api->run();
 ```
-
-The default `CorsConfig` allows all origins (`*`), all common HTTP methods, and common headers. Pass a custom `CorsConfig` to restrict origins, enable credentials, or limit allowed methods.
 
 > **Note:** Using `allowedOrigins: ['*']` together with `allowCredentials: true` will throw a `RuntimeException` — the CORS spec forbids this combination.
 
@@ -336,155 +241,103 @@ The default `CorsConfig` allows all origins (`*`), all common HTTP methods, and 
 
 ### Error responses
 
-The framework automatically returns proper JSON error responses:
-
 | Condition | Status | Body |
 |---|---|---|
-| Route not found | 404 | `{"status":404,"message":"Not Found"}` |
 | Method not allowed | 405 | `{"status":405,"message":"Method Not Allowed"}` + `Allow` header |
 | Unhandled exception | 500 | `{"status":500,"message":"Internal Server Error"}` |
 | Custom `HttpException` | *varies* | Status from exception, safe message exposed |
 
-> **Security:** Unhandled exceptions (500) return a generic `"Internal Server Error"` message to the client. The real exception message is never exposed — instead, it is passed to the configured logger.
+> **Security:** Unhandled exceptions return a generic `"Internal Server Error"` message. The real error is logged server-side, never exposed to the client.
 
 ### Attaching a logger
 
 ```php
-$api = new SimpleApi(routeCacheFile: '...');
+$api = new Endpoint();
 $api->setLogger($myPsr3Logger);  // any object with an error() method
-$api->run();
 ```
 
 ### Custom HTTP exceptions in handlers
 
 ```php
 use Fishyboat21\SimpleApi\Exception\HttpException;
+use Fishyboat21\SimpleApi\Exception\NotFoundException;
 
-// Throw custom HTTP errors from your handlers
-throw new \Fishyboat21\SimpleApi\Exception\NotFoundException('User not found');
-// → 404 {"status":404,"message":"User not found"}
+$api->get(function (Request $request): Response {
+    $user = $this->findUser($request->query('id'));
+    if ($user === null) {
+        throw new NotFoundException('User not found');
+    }
+    return Response::ok($user);
+});
+```
 
-// Or create your own exception class:
+Create your own exception types:
+
+```php
 class UnprocessableEntityException extends HttpException
 {
     public function __construct(string $message = 'Unprocessable Entity')
     {
         parent::__construct($message, 422);
     }
-
     public function getStatusCode(): int { return 422; }
 }
 ```
 
 ---
 
-## Route Cache Commands
-
-```bash
-# Generate the cache (default paths)
-composer route:generate
-
-# Custom paths
-vendor/bin/simple-api route:generate \
-    --scan=src/Api \
-    --namespace="App\\Api" \
-    --output=storage/routes.php \
-    --base-url=api
-```
-
-Re-run this command whenever you add, remove, or rename endpoint files. The cache is a plain PHP array loaded via `require` and cached by OPcache in production.
-
----
-
-## Custom Base Path
-
-By default, routes are prefixed with `/api`. Change this in the constructor:
-
-```php
-// No prefix — routes at /
-$api = new SimpleApi(routeCacheFile: '...', baseUrlPath: '');
-
-// Different prefix
-$api = new SimpleApi(routeCacheFile: '...', baseUrlPath: 'v2');
-// Routes at /v2/health, /v2/users, etc.
-```
-
----
-
 ## Complete Example
 
-**`src/Api/Tasks/_id/Index.php`**
+**`public/api/task.php`**
 
 ```php
 <?php
+require_once __DIR__ . '/../../vendor/autoload.php';
 
-namespace App\Api\Tasks\_id;
-
-use Fishyboat21\SimpleApi\Attribute\Route;
-use Fishyboat21\SimpleApi\Enum\Method;
+use Fishyboat21\SimpleApi\Endpoint;
 use Fishyboat21\SimpleApi\Exception\NotFoundException;
 use Fishyboat21\SimpleApi\Http\Request;
 use Fishyboat21\SimpleApi\Http\Response;
-use Fishyboat21\SimpleApi\Interface\ApiHandler;
 
-class Index implements ApiHandler
-{
-    #[Route(Method::GET)]
-    public function show(Request $request): Response
-    {
-        $taskId = (int) $request->getAttribute('id');
+$api = new Endpoint();
 
-        $task = $this->findTask($taskId);
-        if ($task === null) {
-            throw new NotFoundException("Task {$taskId} not found");
-        }
+$api->get(function (Request $request): Response {
+    $taskId = (int) $request->query('id');
 
-        return Response::ok($task);
+    $task = findTask($taskId);  // your data access
+    if ($task === null) {
+        throw new NotFoundException("Task {$taskId} not found");
     }
 
-    #[Route(Method::PUT)]
-    public function update(Request $request): Response
-    {
-        $taskId = (int) $request->getAttribute('id');
-        $title = $request->body('title');
-        $done = $request->body('done', false);
+    return Response::ok($task);
+});
 
-        $task = $this->updateTask($taskId, $title, $done);
+$api->put(function (Request $request): Response {
+    $taskId = (int) $request->query('id');
+    $title  = $request->body('title');
+    $done   = $request->body('done', false);
 
-        return Response::ok($task, 'Task updated');
-    }
+    $task = updateTask($taskId, $title, $done);
+    return Response::ok($task, 'Task updated');
+});
 
-    #[Route(Method::DELETE)]
-    public function delete(Request $request): Response
-    {
-        $taskId = (int) $request->getAttribute('id');
-        $this->removeTask($taskId);
+$api->delete(function (Request $request): Response {
+    $taskId = (int) $request->query('id');
+    removeTask($taskId);
+    return Response::noContent();
+});
 
-        return Response::noContent();
-    }
-
-    // ... data access methods ...
-}
-```
-
-After creating the file, run `composer route:generate` and the following routes are live:
-
-```
-GET    /api/tasks/42  →  App\Api\Tasks\_id\Index::show()
-PUT    /api/tasks/42  →  App\Api\Tasks\_id\Index::update()
-DELETE /api/tasks/42  →  App\Api\Tasks\_id\Index::delete()
+$api->run();
 ```
 
 ---
 
 ## Performance
 
-- **Route cache** loaded via `require` — OPcache caches the trie in shared memory
-- **O(depth) route matching** — typically 2–5 array lookups per request, no regex, no linear scan
-- **Lazy handler loading** — the matched handler class is autoloaded only after a successful match
+- **No routing overhead** — each endpoint file is served directly by the web server
+- **No route cache** — nothing to generate or load
 - **Lazy request body parsing** — `php://input` is read only if the handler calls `body()` or `bodyData()`
-- **Zero filesystem scanning** at runtime — the route cache is pre-built
-- **No middleware stack** overhead — fixed pipeline: CORS → match → dispatch → send
+- **No middleware stack** — fixed pipeline: CORS → dispatch → send
 
 ---
 
